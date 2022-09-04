@@ -18,19 +18,39 @@ from transformers import BertTokenizer,BertConfig,AdamW
 #from sklearn.metrics import accuracy_score
 #from sklearn.metrics import classification_report
 from tqdm import tqdm
-'''
+
 tokenizer = BertTokenizer.from_pretrained("C:/Users/s123c/Desktop/bert-base-chinese/")
 model = BertModel.from_pretrained("C:/Users/s123c/Desktop/bert-base-chinese/")
-
+'''
 sentence = "今天天气怎么样？"
 # add_special_tokens=True 则前后会分别加上<SOS> <EOS>的embedding
 input_ids = tokenizer.encode(sentence, add_special_tokens=True)
 input_ids = torch.tensor([input_ids])
+#print(model(input_ids))
 with torch.no_grad():
     last_hidden_states = model(input_ids)[0] # Models outputs are now tuples
 # last_hidden_states.shape is (1, 8, 768)
-#print(last_hidden_states)
-#print(input_ids)
+print(last_hidden_states)
+print(input_ids)
+
+class CNNBert(nn.Module):
+    def __init__(self,embed_size,bert_model):
+        super(CNNBert, self).__init__()
+        filter_sizes=[1,3,5]
+        num_filter=1
+        self.bert_model=BertModel.from_pretrained("C:/Users/s123c/Desktop/bert-base-chinese/")
+        self.convs1=nn.ModuleList([nn.Conv1d(768,2,(768,K) )for K in filter_sizes])#待修改
+    def forward(self,x,input_masks,token_type_ids):
+        x = self.bert_model(x, attention_mask=input_masks, token_type_ids=token_type_ids)[2][-4:]
+        x = torch.stack(x, dim=1)
+        #bert_output = self.bert(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask)
+        # 获得预训练模型的输出
+        #bert_cls_hidden_state = bert_output[1]
+        # 将768维的向量输入到线性层映射为二维向量
+        x = [conv(x) for conv in self.convs1]
+        #x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]
+        x = torch.cat(x, 1)
+        return x
 '''
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -50,7 +70,7 @@ class MyDataSet(Dataset):
 
 Data_path = "E:/data/NLP/IMDB_Dataset.csv"
 Totle_data = pd.read_csv(Data_path)
-'''
+
 labels=[]
 for sentiment in Totle_data['sentiment']:
     labels.append(sentiment)
@@ -58,7 +78,7 @@ for sentiment in Totle_data['sentiment']:
 #print(labels)
 y=np.array(list(map(lambda x:1 if x=='positive'else 0, labels)))
 labels=np.asarray(y).astype('float32')
-'''
+
 custom_dataset = MyDataSet(Totle_data)
 # 按照比例划分
 train_size = int(len(custom_dataset) * 0.8)
@@ -82,12 +102,12 @@ validate_dataset.dataset.data.to_csv(test_data_path, index=False, header=True)
 print('number of training data:',len(train_dataset))
 
 data = pd.read_csv(train_data_path)
-print(data.head())
+#print(data.head())
 
 
-class BertClassificationModel(nn.Module):
+class BertCNNModel(nn.Module):
     def __init__(self):
-        super(BertClassificationModel, self).__init__()
+        super(BertCNNModel, self).__init__()
         # 加载预训练模型
         pretrained_weights = "C:/Users/s123c/Desktop/bert-base-chinese/"
         self.bert = transformers.BertModel.from_pretrained(pretrained_weights)
@@ -212,7 +232,7 @@ def train(model,train_loader,dev_loader) :
             #梯度清零
             optimizer.zero_grad()
             #将数据输入到模型中获得输出
-            out_put =  model(input_ids,token_type_ids,attention_mask)
+            out_put = model(input_ids, token_type_ids, attention_mask)
             #计算损失
             loss = criterion(out_put, labels)
             _, predict = torch.max(out_put.data, 1)
@@ -243,41 +263,3 @@ model = BertClassificationModel()
 #调用训练函数进行训练与验证
 train(model,train_loader,dev_loader)
 
-'''
-def predict(model,test_loader):
-    model.to(device)
-    model.eval()
-    predicts = []
-    predict_probs = []
-    with torch.no_grad():
-        correct = 0
-        total = 0
-        for step, (input_ids,token_type_ids,attention_mask,labels) in enumerate(test_loader): 
-            input_ids,token_type_ids,attention_mask,labels=input_ids.to(device),token_type_ids.to(device),attention_mask.to(device),labels.to(device)
-            out_put = model(input_ids,token_type_ids,attention_mask)
-           
-            _, predict = torch.max(out_put.data, 1)
- 
-            pre_numpy = predict.cpu().numpy().tolist()
-            predicts.extend(pre_numpy)
-            probs = F.softmax(out_put).detach().cpu().numpy().tolist()
-            predict_probs.extend(probs)
- 
-            correct += (predict==labels).sum().item()
-            total += labels.size(0)
-        res = correct / total
-        print('predict_Accuracy : {} %'.format(100 * res))
-        #返回预测结果和预测的概率
-        return predicts,predict_probs
-        
-        
-        #引进训练好的模型进行测试
-path = '/root/data/savedmodel/span_bert_hide_model.pkl'
-Trained_model = torch.load(path)
-#predicts是预测的（0   1），predict_probs是概率值
-predicts,predict_probs = predict(Trained_model,dev_loader)
-
-P = sklearn.metrics.precision_score(y_true, y_pred, average=’binary’,sample_weight=None)
-R = sklearn.metrics.recall_score(y_true, y_pred, average=’binary’,sample_weight=None)
-F1 = sklearn.metrics.f1_score(y_true, y_pred,average=’binary’,sample_weight=None)
-        '''
